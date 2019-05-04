@@ -13,7 +13,7 @@ def hook(l=None):
     IPython.embed(banner1="", confirm_exit=False)
     exit(0)
 
-#have not yet solved this for BITS==8
+#have not yet solved this for BITS=8
 #good candidate for
 #https://github.com/marijnheule/CnC
 BITS=6
@@ -36,7 +36,7 @@ def half_branch(x):
 def half_branch8(i0):
     #same as above but more efficent 
     #BITS must be a power of 2, currently configured
-    # only for when BITS==8
+    # only for when BITS=8
     #Uses the fast hamming weight masks
     m1 = int(   "01"   *(BITS//2),2)
     m2 = int(  "0011"  *(BITS//4),2)
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     for other in previous_sboxs:
         #there shouldn't be a simple xor change between the two
         for diff in range(2**BITS):
-            s.add(z3.Or(*(o!=x^diff for o,x in zip(other,sbox))))
+            s.add(z3.Or(*(o^diff!=x for o,x in zip(other,sbox))))
     #assert branch numbers
     for i in range(2**BITS):
         for j in range(i+1,2**BITS):
