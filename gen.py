@@ -51,15 +51,27 @@ def branch(f,x,y):
     b = half_branch8 if BITS==8 else half_branch
     return b(x^y)+b(f[x]^f[y])
 
-if __name__ == "__main__":
+def get_saved_data(b):
     #load saved data
-    save_file = "saved%d.txt"%BITS
+    save_file = "saved%d.txt"%b
     previous_sboxs = []
     if os.path.exists(save_file):
+        logger.debug("open %r for reading", save_file)
         with open(save_file, "r") as f:
             for line in f:
                 #ast.literal_eval is "safe" lol
                 previous_sboxs.append(ast.literal_eval(line))
+    else:
+        logger.debug("%r does not exist", save_file)
+    return previous_sboxs
+
+def save_data(b,data):
+    save_file = "saved%d.txt"%b
+    with open(save_file, "a") as f:
+        f.write(data)
+
+if __name__ == "__main__":
+    previous_sboxs = get_saved_data(BITS)
     #have not yet got the parallel to work
     #https://stackoverflow.com/questions/53246030/parallel-solving-in-z3
     #https://github.com/Z3Prover/z3/issues/2207
@@ -67,7 +79,8 @@ if __name__ == "__main__":
     set_option("parallel.threads.max", 15)
     s = SolverFor("QF_BV")
     #No z3.Function needed with discrete indicies
-    sbox = [BitVec("s%02x"%x, BITS) for x in range(2**BITS)]
+    symb_values = [BitVec("s%02x"%x, BITS) for x in range(2**BITS)]
+    sbox = [(x+int("01"*(BITS//2),2))&((1<<BITS)-1) for x in symb_values]
     #assert uniqness
     for other in previous_sboxs:
         #there shouldn't be a simple xor change between the two
@@ -77,6 +90,7 @@ if __name__ == "__main__":
     for i in range(2**BITS):
         for j in range(i+1,2**BITS):
             #at least 1 element will have a bnum of 4
+            s.add(branch(symb_values,i,j)>=3)
             s.add(branch(sbox,i,j)>=3)
     #see if the assertions are satisfiable
     start = time.time()
@@ -86,11 +100,10 @@ if __name__ == "__main__":
     if r == sat:
         #extract the sbox values as python ints
         m = s.model()
-        F = [m.eval(x).as_long() for x in sbox]
+        F = [m.eval(x).as_long() for x in symb_values]
         logger.info(','.join(
             "{{:0{}b}}".format(BITS).format(x) for x in F
         ))
         #append this entry to the save file
-        with open(save_file, "a") as f:
-            f.write(str(F)+"\n")
+        save_data(BITS, str(F)+"\n")
     # hook(locals())
