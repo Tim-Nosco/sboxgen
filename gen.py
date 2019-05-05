@@ -86,11 +86,11 @@ if __name__ == "__main__":
     #https://stackoverflow.com/questions/53246030/parallel-solving-in-z3
     #https://github.com/Z3Prover/z3/issues/2207
     set_option("parallel.enable", True)
-    set_option("parallel.threads.max", 8)
+    set_option("parallel.threads.max", 16)
     s = SolverFor("QF_BV")
     #No z3.Function needed with discrete indicies
     sbox = [BitVec("s%02x"%x, BITS) for x in range(2**BITS)]
-    post_add = [(x+int("01"*(BITS//2),2))&((1<<BITS)-1) for x in post_add]
+    post_add = [(x+int("01"*(BITS//2),2))&((1<<BITS)-1) for x in sbox]
     #assert uniqness
     for other in previous_sboxs:
         #there shouldn't be a simple xor change between the two
