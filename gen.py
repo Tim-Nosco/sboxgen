@@ -16,7 +16,7 @@ def hook(l=None):
 #have not yet solved this for BITS=8
 #good candidate for
 #https://github.com/marijnheule/CnC
-BITS=6
+BITS=8
 #must be even to calculate branch number
 assert(BITS%2 == 0)
 
@@ -51,6 +51,16 @@ def branch(f,x,y):
     b = half_branch8 if BITS==8 else half_branch
     return b(x^y)+b(f[x]^f[y])
 
+def branch_no_math(f,x,y):
+    partial_bnum = half_branch(x^y)
+    out_diff = f[x]^f[y]
+    lo = Extract((BITS//2)-1,       0, out_diff) != 0
+    hi = Extract(     BITS-1, BITS//2, out_diff) != 0
+    if partial_bnum == 2:
+        return Or(hi,lo)
+    else:
+        return And(hi,lo)
+
 def get_saved_data(b):
     #load saved data
     save_file = "saved%d.txt"%b
@@ -76,11 +86,11 @@ if __name__ == "__main__":
     #https://stackoverflow.com/questions/53246030/parallel-solving-in-z3
     #https://github.com/Z3Prover/z3/issues/2207
     set_option("parallel.enable", True)
-    set_option("parallel.threads.max", 15)
+    set_option("parallel.threads.max", 8)
     s = SolverFor("QF_BV")
     #No z3.Function needed with discrete indicies
-    symb_values = [BitVec("s%02x"%x, BITS) for x in range(2**BITS)]
-    sbox = [(x+int("01"*(BITS//2),2))&((1<<BITS)-1) for x in symb_values]
+    sbox = [BitVec("s%02x"%x, BITS) for x in range(2**BITS)]
+    post_add = [(x+int("01"*(BITS//2),2))&((1<<BITS)-1) for x in post_add]
     #assert uniqness
     for other in previous_sboxs:
         #there shouldn't be a simple xor change between the two
@@ -90,8 +100,8 @@ if __name__ == "__main__":
     for i in range(2**BITS):
         for j in range(i+1,2**BITS):
             #at least 1 element will have a bnum of 4
-            s.add(branch(symb_values,i,j)>=3)
-            s.add(branch(sbox,i,j)>=3)
+            s.add(branch_no_math(sbox,i,j))
+            # s.add(branch_no_math(post_add,i,j))
     #see if the assertions are satisfiable
     start = time.time()
     logger.debug("check")
@@ -100,7 +110,7 @@ if __name__ == "__main__":
     if r == sat:
         #extract the sbox values as python ints
         m = s.model()
-        F = [m.eval(x).as_long() for x in symb_values]
+        F = [m.eval(x).as_long() for x in sbox]
         logger.info(','.join(
             "{{:0{}b}}".format(BITS).format(x) for x in F
         ))
