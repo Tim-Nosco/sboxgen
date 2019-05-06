@@ -2,7 +2,7 @@
 import time, logging, os, ast
 from z3 import *
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 logging.basicConfig(format="%(levelname)9s:%(filename)s:%(message)s")
 logger.setLevel(logging.DEBUG)
 
