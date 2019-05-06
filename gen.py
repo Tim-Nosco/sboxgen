@@ -16,7 +16,7 @@ def hook(l=None):
 #have not yet solved this for BITS=8
 #good candidate for
 #https://github.com/marijnheule/CnC
-BITS=8
+BITS=6
 #must be even to calculate branch number
 assert(BITS%2 == 0)
 
@@ -28,7 +28,7 @@ def half_branch(x):
     # 1 if the upper half of x has a set bit
     #  or the lower half of x has a set bit
     lo,hi = 0,0
-    for i in range(BITS):
+    for i in range(BITS//2):
         lo |= (x>>i)&1
         hi |= (x>>(i+BITS//2))&1
     return lo+hi
