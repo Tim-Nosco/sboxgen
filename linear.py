@@ -6,21 +6,6 @@ logger = logging.getLogger(__name__)
 from itertools import chain
 from random import shuffle
 
-class Stack(list):
-    push = list.append
-    def __getitem__(self,x):
-        r = list.__getitem__(self, x)
-        return Stack(r) if type(r) == list else r
-
-class Assignment:
-    def __init__(self, level, pos, val, state):
-        self.pos, self.val = pos, val
-        self.level, self.state = level, state
-    def __repr__(self):
-        return """{{level={:d}, pos={:02x}, val={:02x}}}\n{}""".format(
-            self.level, self.pos, self.val, self.state
-        )
-
 class State:
     def __init__(self, setup=True):
         if not setup:
@@ -107,9 +92,11 @@ def level(state, idx=0):
 def main(out, **kwargs):
     logger.debug("main(%r)", locals())
     s = level(State())
-    print(s)
+    out.write(str(s)+'\n')
     choices = [list(s.available[pos])[0]for pos in special]
-    print("choices="+' '.join('{:02x}'.format(x) for x in choices))
+    out.write("choices="+' '.join('{:02x}'.format(x) for x in choices))
+    out.write('\n')
+    return [list(s.available[i])[0] for i in range(0x100)]
     
 if __name__ == "__main__":
     #make the argument parser
