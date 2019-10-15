@@ -8,7 +8,8 @@ from common import hook, parse_args, fatal
 import argparse
 import logging
 import random
-import sys
+import sys, os
+from binascii import hexlify as h
 logger = logging.getLogger(__name__)
 
 
@@ -103,12 +104,12 @@ def encrypt_round(
     #mix in the key
     c ^= key
     #apply rotate to sbox key
-    rotate_amount = 4 << t
-    sbox = [rol(x, rotate_amount, 8) for x in sbox_key]
+    #rotate_amount = 4 << t
+    #sbox_key = [rol(x, rotate_amount, 8) for x in sbox_key]
     #apply sbox
-    c = apply_sbox(c, sbox)
+    c = apply_sbox(c, sbox_key)
     #rotate full ciphertext
-    c = rol(c, 4*5, block_size*8)
+    c = rol(c, 4, block_size*8)
     #format result
     return l2b(c)
 
@@ -127,13 +128,27 @@ def encrypt_block(
             sbox_key[round_num*4:round_num*4+4],
             block_size
         ),
-        range(block_size), m
+        #range(block_size), m
+        range(16),m
     )
 
+def analysis(key):
+    keys, sbox = expand_key(key)
+    x, y = b2l(os.urandom(16)), b2l(os.urandom(16))
+    diff = b2l(os.urandom(16))
+    diff_sqrd = []
+    for i in (x,y):
+        a = b2l(encrypt_block(l2b(i),keys,sbox,16))
+        b = b2l(encrypt_block(l2b(i^diff),keys,sbox,16))
+        print("{:032x}->{:032x}".format(i, a))
+        print("{:032x}->{:032x}".format(i^diff, b))
+        print("{:032x}->{:032x}".format(diff, a^b))
+        print("-"*66)
+        diff_sqrd.append(a^b)
+    print("{:032x}".format(diff_sqrd[0]^diff_sqrd[1]).rjust(66,' '))
 
 def main(out, **kwargs):
     logger.debug("main(%r)", locals())
-
 
 if __name__ == "__main__":
     #make the argument parser
