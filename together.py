@@ -45,7 +45,7 @@ def rol(val, r_bits, max_bits):
         ((val & (2**max_bits-1)) >> (max_bits-(r_bits % max_bits)))
 
 
-def expand_key(key: bytes, num_keys: int = 16):
+def expand_key(key: bytes, num_keys: int = 5):
     random.seed(b2l(key))
     sbox_key = gen_box_key(num_keys)
     keys = b''
@@ -105,14 +105,15 @@ def encrypt_round(
     c ^= key
     #apply sbox
     c = apply_sbox(c, sbox_key)
-    #bit mixing
+    #lower halfs shuffle
     m = int('f0'*block_size, 16)
     uh, lh = c & m, (c << 4) & m
     c = uh | rol(lh, 8*7-4, block_size*8)
     #test high bit of key
     t = (key & (1 << (block_size-1))) >> (block_size-1)
-    #non-linear addition
-    c += int('10'*(block_size//2), 2) >> t
+    #non-linear addition to every byte except most significant
+    c += int('01010101'*(block_size), 2) << t
+    c = c&int('ff'*block_size,16)
     #format result
     return l2b(c)
 
@@ -131,13 +132,12 @@ def encrypt_block(
                       sbox_key[round_num*4:(round_num+1)*4],
                       block_size
                   ),
-                  #range(block_size), m
-                  range(9),m
+                  range(len(expanded_key)//block_size), m
                   )
 
 
 def analysis(key):
-    keys, sbox = expand_key(key)
+    keys, sbox = expand_key(key, 4)
     x, y = b2l(os.urandom(16)), b2l(os.urandom(16))
     diff = b2l(os.urandom(16))
     diff_sqrd = []
@@ -152,9 +152,10 @@ def analysis(key):
     print("{:032x}".format(diff_sqrd[0] ^ diff_sqrd[1]).rjust(66, ' '))
 
     bits = [0 for _ in range(16*8)]
-    sample = 5000
+    sample = 10000
     for _ in trange(sample):
         diff_sqrd = []
+        #diff = b2l(os.urandom(16))
         x, y = b2l(os.urandom(16)), b2l(os.urandom(16))
         for i in (x, y):
             a = b2l(encrypt_block(l2b(i), keys, sbox, 16))
