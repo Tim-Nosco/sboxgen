@@ -131,8 +131,8 @@ def encrypt_block(
                       sbox_key[round_num*4:(round_num+1)*4],
                       block_size
                   ),
-                  range(block_size), m
-                  #range(8),m
+                  #range(block_size), m
+                  range(9),m
                   )
 
 
@@ -170,6 +170,7 @@ def analysis(key):
         int(binom_test(x, sample, 0.5)*100)
     ) for x in bits)
     print('\n'.join(chunks(test, 16, m=' '.join)))
+    print(binom_test(sum(bits), sample*len(bits), 0.5))
 
 
 def main(out, **kwargs):
