@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+from more_itertools import nth
+import re
+import colorama
 from tqdm import trange
 from scipy.stats import binom_test
 from Crypto.Util.number import \
@@ -35,7 +38,7 @@ def gen_box_key(num_boxes=4):
         #linear.main(out=sys.stdout)
         for _ in range(num_boxes)
     ]
-    key = [box[x] for x in linear.special for box in boxes]
+    key = [box[x] for box in boxes for x in linear.special]
     return bytes(key)
 
 
@@ -45,7 +48,12 @@ def rol(val, r_bits, max_bits):
         ((val & (2**max_bits-1)) >> (max_bits-(r_bits % max_bits)))
 
 
-def expand_key(key: bytes, num_keys: int = 5):
+def ror(val, r_bits, max_bits):
+    return ((val & (2**max_bits-1)) >> r_bits % max_bits) | \
+        (val << (max_bits-(r_bits % max_bits)) & (2**max_bits-1))
+
+
+def expand_key(key: bytes, num_keys: int = 7):
     random.seed(b2l(key))
     sbox_key = gen_box_key(num_keys)
     keys = b''
@@ -107,13 +115,12 @@ def encrypt_round(
     c = apply_sbox(c, sbox_key)
     #lower halfs shuffle
     m = int('f0'*block_size, 16)
-    uh, lh = c & m, (c << 4) & m
-    c = uh | rol(lh, 8*7-4, block_size*8)
-    #test high bit of key
-    t = (key & (1 << (block_size-1))) >> (block_size-1)
-    #non-linear addition to every byte except most significant
-    c += int('01010101'*(block_size), 2) << t
-    c = c&int('ff'*block_size,16)
+    uh, lh = c & m, c & (m >> 4)
+    c = uh | rol(lh, 8*7, block_size*8)
+    #c = uh | rol(lh, 8*(round_num+1), block_size*8)
+    #non-linear addition to every byte
+    c += int('01010101'*(block_size), 2)
+    c = c & int('ff'*block_size, 16)
     #format result
     return l2b(c)
 
@@ -136,24 +143,66 @@ def encrypt_block(
                   )
 
 
-def analysis(key):
-    keys, sbox = expand_key(key, 4)
-    x, y = b2l(os.urandom(16)), b2l(os.urandom(16))
-    diff = b2l(os.urandom(16))
-    diff_sqrd = []
-    for i in (x, y):
-        a = b2l(encrypt_block(l2b(i), keys, sbox, 16))
-        b = b2l(encrypt_block(l2b(i ^ diff), keys, sbox, 16))
-        print("{:032x}->{:032x}".format(i, a))
-        print("{:032x}->{:032x}".format(i ^ diff, b))
-        print("{:032x}->{:032x}".format(diff, a ^ b))
-        print("-"*66)
-        diff_sqrd.append(a ^ b)
-    print("{:032x}".format(diff_sqrd[0] ^ diff_sqrd[1]).rjust(66, ' '))
+def apply_sbox_inv(b, sbox_inv):
+    return b2l(bytes([sbox_inv[x] for x in l2b(b)]))
 
+
+def invert_sbox(sbox_key):
+    sbox = [i | (i << 4) for i in range(0x10)]
+    for k in sbox_key:
+        for x in sbox[:]:
+            sbox.append(k ^ x)
+    sbox_inv = nth(zip(*sorted(enumerate(sbox), key=lambda x: x[1])), 0)
+    return bytes(sbox_inv)
+
+
+def decrypt_sboxs(sbox_keys):
+    return [invert_sbox(x) for x in chunks(sbox_keys, 4)]
+
+
+def decrypt_round(
+    c: bytes,
+    key: bytes, sbox_inv: bytes,
+    block_size: int
+):
+    m, key = b2l(c), b2l(key)
+    #non-linear addition
+    m = (m - int('01'*block_size*4, 2)) % (1 << (block_size*8))
+    #shuffle
+    mask = int('f0'*block_size, 16)
+    uh, lh = m & mask, m & (mask >> 4)
+    m = uh | ror(lh, 8*7, block_size*8)
+    #sbox
+    m = apply_sbox_inv(m, sbox_inv)
+    #key
+    m ^= key
+    return l2b(m)
+
+
+def decrypt_block(
+    c: bytes,
+    expanded_key: bytes, sbox_inv: bytes,
+    block_size: int
+):
+    keys = list(chunks(expanded_key, block_size))
+    return reduce(lambda pt, round_num:
+                  decrypt_round(
+                      pt,
+                      bytes(keys[-1*round_num-1]),
+                      sbox_inv[-1*round_num-1],
+                      block_size
+                  ),
+                  range(len(expanded_key)//block_size), c
+                  )
+
+
+def analysis(key, diff):
+    print("key: {:032x}".format(b2l(key)))
+    keys, sbox = expand_key(key, 16)
+    colorama.init()
     bits = [0 for _ in range(16*8)]
-    sample = 10000
-    for _ in trange(sample):
+    sample = 5000
+    for s in trange(sample):
         diff_sqrd = []
         #diff = b2l(os.urandom(16))
         x, y = b2l(os.urandom(16)), b2l(os.urandom(16))
@@ -161,21 +210,56 @@ def analysis(key):
             a = b2l(encrypt_block(l2b(i), keys, sbox, 16))
             b = b2l(encrypt_block(l2b(i ^ diff), keys, sbox, 16))
             diff_sqrd.append(a ^ b)
+            if s == 0:
+                print("\r{:032x}->{:032x}  ".format(i, a))
+                print("{:032x}->{:032x}  ".format(i ^ diff, b))
+                print("{:032x}->{:032x}  ".format(diff, a ^ b))
+                print("-"*66)
+
         r = diff_sqrd[0] ^ diff_sqrd[1]
+        if s == 0:
+            print("{:032x}".format(r).rjust(66, ' '))
+            print('\r')
 
         #r = encrypt_block(os.urandom(16), keys, sbox, 16)
         r = '{:0128b}'.format(r)
         bits = [x+int(y, 2) for x, y in zip(bits, r)]
 
-    test = ('{:03d}'.format(
-        int(binom_test(x, sample, 0.5)*100)
-    ) for x in bits)
-    print('\n'.join(chunks(test, 16, m=' '.join)))
-    print(binom_test(sum(bits), sample*len(bits), 0.5))
+    from colorama import Fore
+    green, yellow, red = Fore.GREEN, Fore.YELLOW, Fore.RED
+    reset = colorama.Style.RESET_ALL
+    tests = []
+    for x in bits:
+        t = binom_test(x, sample, 0.5)
+        x = "%.2E" % t
+        if len(x) > 8:
+            x = red+"0"*5+reset
+            tests.append(x)
+            continue
+        x = re.sub(r"\.|E|-|\+", "", x)
+        if t <= 0.1 and t >= 0.01:
+            x = yellow+x+reset
+        elif t < 0.01:
+            x = red+x+reset
+        tests.append(x)
+    print("\r\nProbability that each bit is equally likely 0 or 1")
+    print('format: XYYZZ = X.YYE-ZZ')
+    print('\n'.join(chunks(tests, 8, m=' '.join)))
+    print("Overall: ", end='')
+    final = binom_test(sum(bits), sample*len(bits), 0.5)
+    print((red if final <= 0.05 else green) + "%.4E" % final + reset)
 
 
 def main(out, **kwargs):
     logger.debug("main(%r)", locals())
+
+    num_ones = 2
+    diff = reduce(
+        lambda a, x: a | (1 << x),
+        random.sample(range(16*8), num_ones),
+        0
+    )
+    analysis(os.urandom(16), diff)
 
 
 if __name__ == "__main__":

@@ -96,7 +96,9 @@ def main(out, **kwargs):
     choices = [list(s.available[pos])[0]for pos in special]
     out.write("choices="+' '.join('{:02x}'.format(x) for x in choices))
     out.write('\n')
-    return [list(s.available[i])[0] for i in range(0x100)]
+    sbox = [list(s.available[i])[0] for i in range(0x100)]
+    assert(len(set(sbox))==0x100)
+    return sbox
     
 if __name__ == "__main__":
     #make the argument parser
