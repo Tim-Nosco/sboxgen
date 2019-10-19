@@ -67,12 +67,7 @@ def expand_key(key: bytes, num_keys: int = 7):
     return keys, sbox_key
 
 
-def apply_sbox(b: int, key: list, block_size: int = 16):
-    #fix keys
-    key = [b2l(l2b(x)*block_size) for x in key]
-    #extract upper and lower halfs
-    uh, lh = b & int('f0'*block_size, 16), b & int('0f'*block_size, 16)
-    c = lh | (lh << 4)
+def conditional_apply(uh, c, key, block_size):
     #uh>=1
     p = (uh & int('10'*block_size, 16)) >> 4
     p |= p << 1
@@ -99,6 +94,15 @@ def apply_sbox(b: int, key: list, block_size: int = 16):
     c ^= key[3] & p
     logger.debug("%032x", c)
     return c
+
+
+def apply_sbox(b: int, key: list, block_size: int = 16):
+    #fix keys
+    key = [b2l(l2b(x)*block_size) for x in key]
+    #extract upper and lower halfs
+    uh, lh = b & int('f0'*block_size, 16), b & int('0f'*block_size, 16)
+    c = lh | (lh << 4)
+    return conditional_apply(uh, c, key, block_size)
 
 
 def encrypt_round(
@@ -143,8 +147,21 @@ def encrypt_block(
                   )
 
 
-def apply_sbox_inv(b, sbox_inv):
-    return b2l(bytes([sbox_inv[x] for x in l2b(b)]))
+def apply_sbox_inv_key(b, key, block_size):
+    #fix keys
+    key = [b2l(l2b(x)*block_size) for x in key]
+    #extract upper and lower halfs
+    uh, c = b & int('f0'*block_size, 16), b & int('0f'*block_size, 16)
+    uh = uh ^ (c << 4)
+    return conditional_apply(uh, c, key, block_size)
+
+
+def sbox_inv_keys(sbox_keys):
+    return bytes(
+        x[y]
+        for x in decrypt_sboxs(sbox_keys)
+        for y in linear.special
+    )
 
 
 def invert_sbox(sbox_key):
@@ -173,7 +190,7 @@ def decrypt_round(
     uh, lh = m & mask, m & (mask >> 4)
     m = uh | ror(lh, 8*7, block_size*8)
     #sbox
-    m = apply_sbox_inv(m, sbox_inv)
+    m = apply_sbox_inv_key(m, sbox_inv, block_size)
     #key
     m ^= key
     return l2b(m)
@@ -181,15 +198,16 @@ def decrypt_round(
 
 def decrypt_block(
     c: bytes,
-    expanded_key: bytes, sbox_inv: bytes,
+    expanded_key: bytes, sbox_keys: bytes,
     block_size: int
 ):
-    keys = list(chunks(expanded_key, block_size))
+    keys = list(chunks(expanded_key, block_size))[::-1]
+    sbox_keys = list(chunks(sbox_keys, 4))[::-1]
     return reduce(lambda pt, round_num:
                   decrypt_round(
                       pt,
-                      bytes(keys[-1*round_num-1]),
-                      sbox_inv[-1*round_num-1],
+                      bytes(keys[round_num]),
+                      bytes(sbox_keys[round_num]),
                       block_size
                   ),
                   range(len(expanded_key)//block_size), c
